@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum TicketStatus {
+  OPEN
+  TRIAGED
+  IN_PROGRESS
+  IN_REVIEW
+  TESTING
+  DONE
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  DEVELOPER
+  QA
+}
+
+enum TicketEnvironment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum TicketSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tickets   Ticket[]
+  assignedTickets Ticket[] @relation("TicketAssignee")
+  comments TicketComment[]
+  activities TicketActivity[]
+  notifications Notification[]
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  ticketId   Int?
+  message    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket     Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead, createdAt])
+}
+
+model Ticket {
+  id                Int               @id @default(autoincrement())
+  userId            Int?
+  author            String            @default("Anonymous")
+  title             String
+  description       String
+  project           String            @default("General")
+  module            String?
+  appVersion        String?
+  branch            String?
+  environment       TicketEnvironment @default(DEVELOPMENT)
+  severity          TicketSeverity    @default(MEDIUM)
+  reproducible      Boolean           @default(true)
+  expectedBehavior  String?
+  actualBehavior    String?
+  stepsToReproduce  String?
+  errorLog          String?
+  status            TicketStatus      @default(OPEN)
+  priority          TicketPriority    @default(MEDIUM)
+  assigneeUserId    Int?
+  dueAt             DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assignee          User?             @relation("TicketAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  comments          TicketComment[]
+  activities        TicketActivity[]
+  notifications Notification[]
+
+  @@index([userId])
+  @@index([assigneeUserId])
+  @@index([project, status, priority, severity])
+}
+
+model TicketComment {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int
+  userId    Int?
+  author    String
+  content   String
+  createdAt DateTime @default(now())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+}
+
+model TicketActivity {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int
+  actorId   Int?
+  actorName String
+  action    String
+  message   String
+  createdAt DateTime @default(now())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+}

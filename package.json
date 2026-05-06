@@ -1,0 +1,27 @@
+{
+  "name": "system3",
+  "version": "1.0.0",
+  "description": "Simple ticketing system with PHP, TailwindCSS, Prisma, and SQLite",
+  "main": "index.js",
+  "scripts": {
+    "dev:css": "npx @tailwindcss/cli -i ./assets/css/input.css -o ./public/assets/app.css --watch",
+    "build:css": "npx @tailwindcss/cli -i ./assets/css/input.css -o ./public/assets/app.css --minify",
+    "db:migrate": "npx prisma migrate dev --name init",
+    "db:generate": "npx prisma generate",
+    "db:seed": "npx prisma db execute --file ./prisma/seed.sql",
+    "serve": "php -S localhost:8000 -t public"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "prisma": "^7.8.0",
+    "tailwindcss": "^4.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.4",
+    "dotenv": "^17.4.2"
+  }
+}
