@@ -58,14 +58,102 @@ try {
   <title>Admin Issue Details</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body class="min-h-screen bg-zinc-100 text-zinc-900">
-  <main class="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-    <div class="mb-4 flex items-center justify-between">
-      <a href="/" class="text-sm font-medium text-indigo-700 hover:underline">← Back to dashboard</a>
-      <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">Admin Issue Page</span>
+<body class="min-h-screen bg-zinc-100 text-zinc-900 antialiased">
+  <nav class="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur">
+    <div class="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7h18"></path>
+            <path d="M5 7v14h6V14h2v7h6V7"></path>
+          </svg>
+        </span>
+        <div>
+          <p class="text-sm font-semibold leading-tight">Ticketing System</p>
+          <p class="text-xs text-zinc-500">Issue Management</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+          Admin Issue Page
+        </span>
+        <a href="/" class="inline-flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-200">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+          Dashboard
+        </a>
+      </div>
     </div>
+  </nav>
 
-    <?php if ($error !== null): ?>
+  <main class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
+    <section class="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside class="sticky top-20 self-start rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <p class="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Navigation</p>
+        <nav class="mt-3 space-y-1">
+          <a href="/" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-50 text-indigo-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/></svg>
+            </span>
+            Dashboard
+          </a>
+          <a href="/?status=OPEN" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.5-5.5l-1.5 1.5M7 17l-1.5 1.5M17 17l1.5 1.5M7 7l-1.5-1.5"/></svg>
+            </span>
+            Open Tickets
+          </a>
+          <a href="/?status=TRIAGED" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-cyan-50 text-cyan-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+            Triaged
+          </a>
+          <a href="/?status=IN_PROGRESS" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+            </span>
+            In Progress
+          </a>
+          <a href="/?status=IN_REVIEW" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </span>
+            In Review
+          </a>
+          <a href="/?status=TESTING" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-orange-50 text-orange-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2h8l1 6H7l1-6z"/><path d="M7 8h10v11H7z"/><path d="M10 13h4"/></svg>
+            </span>
+            Testing
+          </a>
+          <?php if (isAdmin($user)): ?>
+            <a href="/?status=DONE" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+              </span>
+              Done
+            </a>
+          <?php endif; ?>
+        </nav>
+
+        <div class="mt-6 rounded-xl bg-zinc-50 p-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Account</p>
+          <p class="mt-2 text-sm font-medium text-zinc-800"><?= htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8') ?></p>
+          <p class="text-xs text-zinc-500"><?= htmlspecialchars((string) $user['email'], ENT_QUOTES, 'UTF-8') ?></p>
+        </div>
+      </aside>
+
+      <div class="space-y-6">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-indigo-700 transition hover:text-indigo-900">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+            Back to dashboard
+          </a>
+          <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">Admin Issue Page</span>
+        </div>
+
+        <?php if ($error !== null): ?>
       <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
     <?php endif; ?>
 
