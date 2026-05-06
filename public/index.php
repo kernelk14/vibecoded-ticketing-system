@@ -28,6 +28,7 @@ if ($user !== null && isset($_GET['ajax_notifications'])) {
         return [
             'id' => (int) $notification['id'],
             'ticketId' => isset($notification['ticketId']) ? (int) $notification['ticketId'] : null,
+            'commentId' => isset($notification['commentId']) ? (int) $notification['commentId'] : null,
             'message' => (string) $notification['message'],
             'isRead' => (int) $notification['isRead'] === 1,
             'createdAt' => (string) $notification['createdAt'],
@@ -207,10 +208,10 @@ foreach ($tickets as $ticket) {
       </div>
       <div class="flex items-center gap-3">
         <?php if ($user !== null): ?>
-          <span id="admin-alert-chip" class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+          <a id="admin-alert-chip" href="#notifications-section" class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200">
             Alerts
             <span id="admin-alert-count" class="rounded-full bg-amber-200 px-1.5 py-0.5"><?= $unreadNotificationCount ?></span>
-          </span>
+          </a>
           <span class="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-700"><?= htmlspecialchars((string) $user['role'], ENT_QUOTES, 'UTF-8') ?></span>
           <span class="hidden text-sm text-zinc-600 md:inline"><?= htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8') ?></span>
           <form method="post">
@@ -257,8 +258,8 @@ foreach ($tickets as $ticket) {
         </div>
       </section>
     <?php else: ?>
-      <section class="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside class="sticky top-20 self-start rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <section class="flex gap-6">
+        <aside class="sticky top-20 h-fit w-60 flex-none rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           <p class="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Navigation</p>
           <nav class="mt-3 space-y-1">
             <a href="/" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === null ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
@@ -307,6 +308,13 @@ foreach ($tickets as $ticket) {
             <?php endif; ?>
           </nav>
 
+          <a href="/add-ticket.php" class="mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0l6-6-6-6"/></svg>
+            </span>
+            Add Ticket
+          </a>
+
           <div class="mt-6 rounded-xl bg-zinc-50 p-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Account</p>
             <p class="mt-2 text-sm font-medium text-zinc-800"><?= htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8') ?></p>
@@ -314,8 +322,9 @@ foreach ($tickets as $ticket) {
           </div>
         </aside>
 
-        <div class="space-y-6">
-          <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div class="flex-1 space-y-6">
+          <aside class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <section id="notifications-section" class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 class="text-lg font-semibold tracking-tight">Notifications</h2>
@@ -341,7 +350,8 @@ foreach ($tickets as $ticket) {
                 <?php foreach ($adminNotifications as $notification): ?>
                   <article class="rounded-xl border px-4 py-3 <?= (int) $notification['isRead'] === 0 ? 'border-amber-200 bg-amber-50/70' : 'border-zinc-200 bg-zinc-50' ?>">
                     <?php if (!empty($notification['ticketId'])): ?>
-                      <a href="#ticket-<?= (int) $notification['ticketId'] ?>" class="text-sm font-medium text-indigo-700 hover:underline">
+                      <?php $commentHash = !empty($notification['commentId']) ? '#comment-' . (int) $notification['commentId'] : (str_contains((string) $notification['message'], 'comment') ? '#comments' : ''); ?>
+                      <a href="/issue.php?id=<?= (int) $notification['ticketId'] ?><?= $commentHash ?>" class="text-sm font-medium text-indigo-700 hover:underline">
                         <?= htmlspecialchars((string) $notification['message'], ENT_QUOTES, 'UTF-8') ?>
                       </a>
                     <?php else: ?>
@@ -378,85 +388,7 @@ foreach ($tickets as $ticket) {
             <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
           <?php endif; ?>
 
-          <section class="grid gap-6 xl:grid-cols-12">
-            <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm xl:col-span-4">
-              <h2 class="text-lg font-semibold tracking-tight">Create Ticket</h2>
-              <p class="mt-1 text-sm text-zinc-500">Submit a clear issue report for faster triage.</p>
-              <form method="post" class="mt-4 space-y-4">
-                <input type="hidden" name="action" value="create">
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Project</span>
-                  <input type="text" name="project" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. Billing API">
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Title</span>
-                  <input type="text" name="title" required class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. Login page throws 500">
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Description</span>
-                  <textarea name="description" required rows="5" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Describe the issue..."></textarea>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Priority</span>
-                  <select name="priority" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
-                    <?php foreach (ALLOWED_PRIORITIES as $priority): ?>
-                      <option value="<?= $priority ?>"><?= htmlspecialchars($priority, ENT_QUOTES, 'UTF-8') ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Severity</span>
-                  <select name="severity" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
-                    <?php foreach (ALLOWED_SEVERITIES as $severity): ?>
-                      <option value="<?= $severity ?>"><?= htmlspecialchars($severity, ENT_QUOTES, 'UTF-8') ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Environment</span>
-                  <select name="environment" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
-                    <?php foreach (ALLOWED_ENVIRONMENTS as $env): ?>
-                      <option value="<?= $env ?>"><?= htmlspecialchars($env, ENT_QUOTES, 'UTF-8') ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Module</span>
-                  <input type="text" name="module" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. Auth service">
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">App Version</span>
-                  <input type="text" name="appVersion" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. v1.24.0">
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Git Branch</span>
-                  <input type="text" name="branch" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. feature/payment-fix">
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Expected Behavior</span>
-                  <textarea name="expectedBehavior" rows="2" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring"></textarea>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Actual Behavior</span>
-                  <textarea name="actualBehavior" rows="2" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring"></textarea>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Steps to Reproduce</span>
-                  <textarea name="stepsToReproduce" rows="3" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring"></textarea>
-                </label>
-                <label class="block text-sm">
-                  <span class="mb-1.5 block font-medium text-zinc-700">Error Log / Stack Trace</span>
-                  <textarea name="errorLog" rows="3" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 font-mono text-xs outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring"></textarea>
-                </label>
-                <label class="flex items-center gap-2 text-sm text-zinc-700">
-                  <input type="checkbox" name="reproducible" value="1" checked class="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-200">
-                  Reproducible
-                </label>
-                <button class="inline-flex w-full justify-center rounded-xl bg-indigo-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-indigo-700">Add Ticket</button>
-              </form>
-            </div>
-
-            <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm xl:col-span-8">
+            <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm xl:col-span-12">
               <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-lg font-semibold tracking-tight"><?= isAdmin($user) ? 'All Tickets' : 'My Tickets' ?></h2>
                 <div class="flex flex-wrap items-center gap-2">
@@ -651,8 +583,9 @@ foreach ($tickets as $ticket) {
       const wrapperClasses = item.isRead
         ? "rounded-xl border px-4 py-3 border-zinc-200 bg-zinc-50"
         : "rounded-xl border px-4 py-3 border-amber-200 bg-amber-50/70";
+      const commentHash = item.commentId ? `#comment-${Number(item.commentId)}` : (item.message.toLowerCase().includes('comment') ? '#comments' : '');
       const message = item.ticketId
-        ? `<a href="#ticket-${Number(item.ticketId)}" class="text-sm font-medium text-indigo-700 hover:underline">${escapeHtml(item.message)}</a>`
+        ? `<a href="/issue.php?id=${Number(item.ticketId)}${commentHash}" class="text-sm font-medium text-indigo-700 hover:underline">${escapeHtml(item.message)}</a>`
         : `<p class="text-sm font-medium text-zinc-800">${escapeHtml(item.message)}</p>`;
       return `<article class="${wrapperClasses}">
         ${message}
@@ -661,11 +594,12 @@ foreach ($tickets as $ticket) {
     }).join("");
   }
 
-  function showToast(message, ticketId) {
+  function showToast(message, ticketId, commentId) {
     if (!toastHost) return;
     const toast = document.createElement("div");
     toast.className = "rounded-xl border border-indigo-200 bg-white px-4 py-3 shadow-lg";
-    const link = ticketId ? `#ticket-${Number(ticketId)}` : "#";
+    const commentHash = commentId ? `#comment-${Number(commentId)}` : (message.toLowerCase().includes('comment') ? '#comments' : '');
+    const link = ticketId ? `/issue.php?id=${Number(ticketId)}${commentHash}&refresh=1` : "#";
     const content = `
       <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Notification</p>
       <p class="mt-1 text-sm font-medium text-zinc-800">${escapeHtml(message)}</p>
@@ -685,7 +619,7 @@ foreach ($tickets as $ticket) {
     for (const item of data.notifications) {
       if (!seenNotificationIds.has(item.id)) {
         if (firstFetchComplete) {
-          showToast(item.message, item.ticketId);
+          showToast(item.message, item.ticketId, item.commentId);
         }
         seenNotificationIds.add(item.id);
       }

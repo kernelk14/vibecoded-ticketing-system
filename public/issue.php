@@ -8,7 +8,8 @@ require_once __DIR__ . '/../src/tickets.php';
 
 startSession();
 $user = currentUser();
-if ($user === null || !isAdmin($user)) {
+
+if ($user === null) {
     header('Location: /');
     exit;
 }
@@ -18,6 +19,23 @@ if ($ticketId <= 0) {
     header('Location: /');
     exit;
 }
+
+$ticketCheck = getTicketById($ticketId);
+if ($ticketCheck === null) {
+    header('Location: /');
+    exit;
+}
+
+$canView = isAdmin($user) || (int) $ticketCheck['userId'] === (int) $user['id'] || (int) ($ticketCheck['assigneeUserId'] ?? 0) === (int) $user['id'];
+if (!$canView) {
+    header('Location: /');
+    exit;
+}
+
+$unreadNotificationCount = 0;
+
+$adminNotifications = listUserNotifications($user);
+$unreadNotificationCount = unreadNotificationCount($user);
 
 $error = null;
 
@@ -29,6 +47,9 @@ try {
         }
         if ($action === 'add_comment') {
             addCommentToTicket($user, $ticketId, (string) ($_POST['comment'] ?? ''));
+        }
+        if ($action === 'mark_notifications_read') {
+            markNotificationsRead($user);
         }
         header('Location: /issue.php?id=' . $ticketId);
         exit;
@@ -49,14 +70,45 @@ try {
     $comments = [];
     $activities = [];
 }
+
+function statusBadge(string $status): string
+{
+    return match ($status) {
+        'OPEN' => 'bg-blue-100 text-blue-700',
+        'TRIAGED' => 'bg-cyan-100 text-cyan-700',
+        'IN_PROGRESS' => 'bg-amber-100 text-amber-700',
+        'IN_REVIEW' => 'bg-violet-100 text-violet-700',
+        'TESTING' => 'bg-orange-100 text-orange-700',
+        'DONE' => 'bg-emerald-100 text-emerald-700',
+        default => 'bg-zinc-100 text-zinc-600',
+    };
+}
+
+function priorityBadge(string $priority): string
+{
+    return match ($priority) {
+        'LOW' => 'bg-slate-100 text-slate-700',
+        'MEDIUM' => 'bg-violet-100 text-violet-700',
+        'HIGH' => 'bg-orange-100 text-orange-700',
+        'URGENT' => 'bg-rose-100 text-rose-700',
+        default => 'bg-zinc-100 text-zinc-600',
+    };
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Issue Details</title>
+  <title>Issue #<?= $ticketId ?> - Ticketing System</title>
   <link rel="stylesheet" href="/assets/app.css">
+  <style>
+    @keyframes highlight {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(253, 224, 71, 0); }
+      50% { box-shadow: 0 0 0 4px rgba(253, 224, 71, 0.6); }
+    }
+    .highlight-comment { animation: highlight 1s ease-in-out 3; }
+  </style>
 </head>
 <body class="min-h-screen bg-zinc-100 text-zinc-900 antialiased">
   <nav class="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur">
@@ -74,21 +126,28 @@ try {
         </div>
       </div>
       <div class="flex items-center gap-3">
-        <span class="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
-          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-          Admin Issue Page
-        </span>
-        <a href="/" class="inline-flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-200">
-          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
-          Dashboard
+        <a id="admin-alert-chip" href="/#notifications-section" class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200">
+          Alerts
+          <span id="admin-alert-count" class="rounded-full bg-amber-200 px-1.5 py-0.5"><?= $unreadNotificationCount ?></span>
         </a>
+        <span class="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-700"><?= htmlspecialchars((string) $user['role'], ENT_QUOTES, 'UTF-8') ?></span>
+        <span class="hidden text-sm text-zinc-600 md:inline"><?= htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8') ?></span>
+        <a href="/" class="rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-200">Dashboard</a>
+        <form method="post">
+          <input type="hidden" name="action" value="logout">
+          <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-900">Logout</button>
+        </form>
       </div>
     </div>
   </nav>
 
   <main class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-    <section class="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-      <aside class="sticky top-20 self-start rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+    <?php if ($error !== null): ?>
+      <div class="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
+    <?php endif; ?>
+
+    <section class="flex gap-6">
+      <aside class="sticky top-20 h-fit w-60 flex-none rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
         <p class="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Navigation</p>
         <nav class="mt-3 space-y-1">
           <a href="/" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
@@ -137,6 +196,13 @@ try {
           <?php endif; ?>
         </nav>
 
+        <a href="/add-ticket.php" class="mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0l6-6-6-6"/></svg>
+          </span>
+          Add Ticket
+        </a>
+
         <div class="mt-6 rounded-xl bg-zinc-50 p-3">
           <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Account</p>
           <p class="mt-2 text-sm font-medium text-zinc-800"><?= htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8') ?></p>
@@ -144,88 +210,274 @@ try {
         </div>
       </aside>
 
-      <div class="space-y-6">
-        <div class="mb-4 flex items-center justify-between gap-3">
-          <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-indigo-700 transition hover:text-indigo-900">
-            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
-            Back to dashboard
-          </a>
-          <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">Admin Issue Page</span>
-        </div>
-
-        <?php if ($error !== null): ?>
-      <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
-    <?php endif; ?>
-
-    <?php if ($ticket !== null): ?>
-      <section class="grid gap-6 lg:grid-cols-3">
-        <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm lg:col-span-2">
-          <h1 class="text-xl font-semibold">Issue #<?= (int) $ticket['id'] ?> - <?= htmlspecialchars((string) $ticket['title'], ENT_QUOTES, 'UTF-8') ?></h1>
-          <form method="post" class="mt-4 space-y-3">
-            <input type="hidden" name="action" value="save_details">
-            <div class="grid gap-3 md:grid-cols-2">
-              <input name="title" value="<?= htmlspecialchars((string) $ticket['title'], ENT_QUOTES, 'UTF-8') ?>" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Title" required>
-              <input name="project" value="<?= htmlspecialchars((string) $ticket['project'], ENT_QUOTES, 'UTF-8') ?>" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Project">
-              <input name="module" value="<?= htmlspecialchars((string) ($ticket['module'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Module">
-              <input name="appVersion" value="<?= htmlspecialchars((string) ($ticket['appVersion'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="App Version">
-              <input name="branch" value="<?= htmlspecialchars((string) ($ticket['branch'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Branch">
-              <input type="datetime-local" name="dueAt" value="<?= !empty($ticket['dueAt']) ? htmlspecialchars(substr((string) $ticket['dueAt'], 0, 16), ENT_QUOTES, 'UTF-8') : '' ?>" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
-            </div>
-            <textarea name="description" rows="4" class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" required><?= htmlspecialchars((string) $ticket['description'], ENT_QUOTES, 'UTF-8') ?></textarea>
-            <div class="grid gap-3 md:grid-cols-2">
-              <textarea name="expectedBehavior" rows="2" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Expected behavior"><?= htmlspecialchars((string) ($ticket['expectedBehavior'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
-              <textarea name="actualBehavior" rows="2" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Actual behavior"><?= htmlspecialchars((string) ($ticket['actualBehavior'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
-              <textarea name="stepsToReproduce" rows="3" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Steps"><?= htmlspecialchars((string) ($ticket['stepsToReproduce'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
-              <textarea name="errorLog" rows="3" class="rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs" placeholder="Error log"><?= htmlspecialchars((string) ($ticket['errorLog'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
-            </div>
-            <div class="grid gap-3 md:grid-cols-4">
-              <select name="status" class="rounded-lg border border-zinc-300 px-2 py-2 text-sm"><?php foreach (ALLOWED_STATUSES as $value): ?><option value="<?= $value ?>" <?= $ticket['status'] === $value ? 'selected' : '' ?>><?= $value ?></option><?php endforeach; ?></select>
-              <select name="priority" class="rounded-lg border border-zinc-300 px-2 py-2 text-sm"><?php foreach (ALLOWED_PRIORITIES as $value): ?><option value="<?= $value ?>" <?= $ticket['priority'] === $value ? 'selected' : '' ?>><?= $value ?></option><?php endforeach; ?></select>
-              <select name="severity" class="rounded-lg border border-zinc-300 px-2 py-2 text-sm"><?php foreach (ALLOWED_SEVERITIES as $value): ?><option value="<?= $value ?>" <?= $ticket['severity'] === $value ? 'selected' : '' ?>><?= $value ?></option><?php endforeach; ?></select>
-              <select name="environment" class="rounded-lg border border-zinc-300 px-2 py-2 text-sm"><?php foreach (ALLOWED_ENVIRONMENTS as $value): ?><option value="<?= $value ?>" <?= $ticket['environment'] === $value ? 'selected' : '' ?>><?= $value ?></option><?php endforeach; ?></select>
-            </div>
-            <div class="grid gap-3 md:grid-cols-2">
-              <select name="assigneeUserId" class="rounded-lg border border-zinc-300 px-2 py-2 text-sm">
-                <option value="0">Unassigned</option>
-                <?php foreach ($assignableUsers as $assignee): ?>
-                  <option value="<?= (int) $assignee['id'] ?>" <?= (int) $ticket['assigneeUserId'] === (int) $assignee['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $assignee['name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars((string) $assignee['role'], ENT_QUOTES, 'UTF-8') ?>)</option>
-                <?php endforeach; ?>
-              </select>
-              <label class="flex items-center gap-2 text-sm text-zinc-700"><input type="checkbox" name="reproducible" value="1" <?= (int) $ticket['reproducible'] === 1 ? 'checked' : '' ?>> Reproducible</label>
-            </div>
-            <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white">Save All Details</button>
-          </form>
-        </div>
-
-        <div class="space-y-4">
-          <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <h2 class="text-sm font-semibold">Comments</h2>
-            <div class="mt-2 space-y-2">
-              <?php foreach ($comments as $comment): ?>
-                <div class="rounded-md bg-zinc-50 p-2">
-                  <p class="text-xs font-semibold text-zinc-700"><?= htmlspecialchars((string) $comment['author'], ENT_QUOTES, 'UTF-8') ?></p>
-                  <p class="text-sm text-zinc-600"><?= nl2br(htmlspecialchars((string) $comment['content'], ENT_QUOTES, 'UTF-8')) ?></p>
+      <div class="flex-1 space-y-6">
+        <?php if ($ticket !== null): ?>
+          <header class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-3">
+                  <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">Admin View</span>
                 </div>
-              <?php endforeach; ?>
+                <h1 class="mt-2 text-xl font-bold tracking-tight">Issue #<?= (int) $ticket['id'] ?></h1>
+                <p class="mt-1 text-lg text-zinc-600"><?= htmlspecialchars((string) $ticket['title'], ENT_QUOTES, 'UTF-8') ?></p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <span class="rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ring-1 ring-inset <?= statusBadge($ticket['status']) ?>"><?= htmlspecialchars($ticket['status'], ENT_QUOTES, 'UTF-8') ?></span>
+                <span class="rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ring-1 ring-inset <?= priorityBadge($ticket['priority']) ?>"><?= htmlspecialchars($ticket['priority'], ENT_QUOTES, 'UTF-8') ?></span>
+                <span class="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-red-700 ring-1 ring-inset ring-red-200"><?= htmlspecialchars((string) $ticket['severity'], ENT_QUOTES, 'UTF-8') ?></span>
+              </div>
             </div>
-            <form method="post" class="mt-3 space-y-2">
-              <input type="hidden" name="action" value="add_comment">
-              <textarea name="comment" required rows="3" class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" placeholder="Add admin comment..."></textarea>
-              <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white">Post Comment</button>
-            </form>
-          </section>
+          </header>
 
-          <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <h2 class="text-sm font-semibold">Activity</h2>
-            <div class="mt-2 space-y-1">
-              <?php foreach ($activities as $activity): ?>
-                <p class="text-xs text-zinc-600"><span class="font-semibold"><?= htmlspecialchars((string) $activity['actorName'], ENT_QUOTES, 'UTF-8') ?></span> <?= htmlspecialchars((string) $activity['message'], ENT_QUOTES, 'UTF-8') ?></p>
-              <?php endforeach; ?>
+          <div class="grid gap-6 lg:grid-cols-3">
+            <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm lg:col-span-2">
+              <form method="post" class="space-y-4">
+                <input type="hidden" name="action" value="save_details">
+                <div class="grid gap-3 md:grid-cols-2">
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Project</span>
+                    <input name="project" value="<?= htmlspecialchars((string) $ticket['project'], ENT_QUOTES, 'UTF-8') ?>" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Project">
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Module</span>
+                    <input name="module" value="<?= htmlspecialchars((string) ($ticket['module'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Module">
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">App Version</span>
+                    <input name="appVersion" value="<?= htmlspecialchars((string) ($ticket['appVersion'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="App Version">
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Git Branch</span>
+                    <input name="branch" value="<?= htmlspecialchars((string) ($ticket['branch'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Git Branch">
+                  </label>
+                </div>
+                <label class="block text-sm">
+                  <span class="mb-1.5 block font-medium text-zinc-700">Description</span>
+                  <textarea name="description" rows="4" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" required><?= htmlspecialchars((string) $ticket['description'], ENT_QUOTES, 'UTF-8') ?></textarea>
+                </label>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Expected Behavior</span>
+                    <textarea name="expectedBehavior" rows="2" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Expected behavior"><?= htmlspecialchars((string) ($ticket['expectedBehavior'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Actual Behavior</span>
+                    <textarea name="actualBehavior" rows="2" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Actual behavior"><?= htmlspecialchars((string) ($ticket['actualBehavior'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                  </label>
+                </div>
+                <label class="block text-sm">
+                  <span class="mb-1.5 block font-medium text-zinc-700">Steps to Reproduce</span>
+                  <textarea name="stepsToReproduce" rows="3" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Steps to reproduce"><?= htmlspecialchars((string) ($ticket['stepsToReproduce'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                </label>
+                <label class="block text-sm">
+                  <span class="mb-1.5 block font-medium text-zinc-700">Error Log / Stack Trace</span>
+                  <textarea name="errorLog" rows="3" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 font-mono text-xs outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="Error log"><?= htmlspecialchars((string) ($ticket['errorLog'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                </label>
+                <div class="grid gap-3 md:grid-cols-4">
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Status</span>
+                    <select name="status" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                      <?php foreach (ALLOWED_STATUSES as $value): ?>
+                        <option value="<?= $value ?>" <?= $ticket['status'] === $value ? 'selected' : '' ?>><?= $value ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Priority</span>
+                    <select name="priority" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                      <?php foreach (ALLOWED_PRIORITIES as $value): ?>
+                        <option value="<?= $value ?>" <?= $ticket['priority'] === $value ? 'selected' : '' ?>><?= $value ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Severity</span>
+                    <select name="severity" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                      <?php foreach (ALLOWED_SEVERITIES as $value): ?>
+                        <option value="<?= $value ?>" <?= $ticket['severity'] === $value ? 'selected' : '' ?>><?= $value ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Environment</span>
+                    <select name="environment" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                      <?php foreach (ALLOWED_ENVIRONMENTS as $value): ?>
+                        <option value="<?= $value ?>" <?= $ticket['environment'] === $value ? 'selected' : '' ?>><?= $value ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Assignee</span>
+                    <select name="assigneeUserId" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                      <option value="0">Unassigned</option>
+                      <?php foreach ($assignableUsers as $assignee): ?>
+                        <option value="<?= (int) $assignee['id'] ?>" <?= (int) $ticket['assigneeUserId'] === (int) $assignee['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $assignee['name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars((string) $assignee['role'], ENT_QUOTES, 'UTF-8') ?>)</option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                  <label class="block text-sm">
+                    <span class="mb-1.5 block font-medium text-zinc-700">Due Date</span>
+                    <input type="datetime-local" name="dueAt" value="<?= !empty($ticket['dueAt']) ? htmlspecialchars(substr((string) $ticket['dueAt'], 0, 16), ENT_QUOTES, 'UTF-8') : '' ?>" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                  </label>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-zinc-700">
+                  <input type="checkbox" name="reproducible" value="1" <?= (int) $ticket['reproducible'] === 1 ? 'checked' : '' ?> class="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-200">
+                  Reproducible
+                </label>
+                <button class="rounded-xl bg-indigo-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-indigo-700">Save All Details</button>
+              </form>
             </div>
-          </section>
-        </div>
-      </section>
-    <?php endif; ?>
+
+            <div class="space-y-4">
+              <section id="comments" class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <h2 class="text-sm font-semibold text-zinc-700">Comments</h2>
+                <div class="mt-3 space-y-2">
+                  <?php if (empty($comments)): ?>
+                    <p class="text-sm text-zinc-500">No comments yet.</p>
+                  <?php else: ?>
+                    <?php foreach ($comments as $comment): ?>
+                      <div id="comment-<?= (int) $comment['id'] ?>" class="rounded-lg bg-zinc-50 p-3">
+                        <p class="text-xs font-semibold text-zinc-700"><?= htmlspecialchars((string) $comment['author'], ENT_QUOTES, 'UTF-8') ?></p>
+                        <p class="mt-1 text-sm text-zinc-600"><?= nl2br(htmlspecialchars((string) $comment['content'], ENT_QUOTES, 'UTF-8')) ?></p>
+                      </div>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </div>
+                <form method="post" class="mt-3 space-y-2">
+                  <input type="hidden" name="action" value="add_comment">
+                  <textarea name="comment" required rows="3" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm" placeholder="Add comment..."></textarea>
+                  <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white">Post</button>
+                </form>
+              </section>
+
+              <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <h2 class="text-sm font-semibold text-zinc-700">Activity</h2>
+                <div class="mt-3 space-y-2">
+                  <?php if (empty($activities)): ?>
+                    <p class="text-sm text-zinc-500">No activity yet.</p>
+                  <?php else: ?>
+                    <?php foreach ($activities as $activity): ?>
+                      <p class="text-xs text-zinc-600">
+                        <span class="font-semibold"><?= htmlspecialchars((string) $activity['actorName'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <?= htmlspecialchars((string) $activity['message'], ENT_QUOTES, 'UTF-8') ?>
+                        <span class="text-zinc-400">(<?= htmlspecialchars(date('M j g:i A', strtotime((string) $activity['createdAt'])), ENT_QUOTES, 'UTF-8') ?>)</span>
+                      </p>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </div>
+              </section>
+
+              <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <h2 class="text-sm font-semibold text-zinc-700">Details</h2>
+                <div class="mt-3 space-y-2 text-xs">
+                  <p><span class="font-medium text-zinc-500">Author:</span> <span class="text-zinc-800"><?= htmlspecialchars((string) $ticket['author'], ENT_QUOTES, 'UTF-8') ?></span></p>
+                  <p><span class="font-medium text-zinc-500">Created:</span> <span class="text-zinc-800"><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $ticket['createdAt'])), ENT_QUOTES, 'UTF-8') ?></span></p>
+                  <p><span class="font-medium text-zinc-500">Updated:</span> <span class="text-zinc-800"><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $ticket['updatedAt'])), ENT_QUOTES, 'UTF-8') ?></span></p>
+                </div>
+              </section>
+            </div>
+          </div>
+        <?php else: ?>
+          <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Ticket not found.</div>
+        <?php endif; ?>
+      </div>
+    </section>
   </main>
+<script>
+  if (window.location.hash === '#comments' || window.location.hash.startsWith('#comment-')) {
+    const hash = window.location.hash;
+    let target = null;
+    if (hash.startsWith('#comment-')) {
+      target = document.querySelector(hash);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('highlight-comment');
+        setTimeout(() => target.classList.remove('highlight-comment'), 3000);
+      }
+    }
+    if (!target) {
+      const comments = document.getElementById('comments');
+      if (comments) {
+        comments.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        comments.classList.add('highlight-comment');
+        setTimeout(() => comments.classList.remove('highlight-comment'), 3000);
+      }
+    }
+  }
+  if (window.location.search.includes('refresh=1')) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('refresh');
+    window.history.replaceState({}, '', url);
+  }
+  document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', () => {
+      setTimeout(() => location.reload(), 100);
+    });
+  });
+</script>
+<script>
+  const toastHost = document.createElement("div");
+  toastHost.id = "admin-toast-host";
+  toastHost.className = "fixed right-4 top-20 z-50 flex w-full max-w-sm flex-col gap-2";
+  document.body.appendChild(toastHost);
+  const seenNotificationIds = new Set();
+  let firstFetchComplete = false;
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function showToast(message, ticketId, commentId) {
+    if (!toastHost) return;
+    const toast = document.createElement("div");
+    toast.className = "rounded-xl border border-indigo-200 bg-white px-4 py-3 shadow-lg";
+    const commentHash = commentId ? `#comment-${Number(commentId)}` : (message.toLowerCase().includes('comment') ? '#comments' : '');
+    const link = ticketId ? `/issue.php?id=${Number(ticketId)}${commentHash}&refresh=1` : "#";
+    const content = `
+      <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Notification</p>
+      <p class="mt-1 text-sm font-medium text-zinc-800">${escapeHtml(message)}</p>
+    `;
+    toast.innerHTML = ticketId ? `<a href="${link}" class="block">${content}</a>` : content;
+    toastHost.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add("opacity-0", "translate-x-2", "transition");
+      setTimeout(() => toast.remove(), 250);
+    }, 4500);
+  }
+
+  function maybeToastNewNotifications(data) {
+    if (!Array.isArray(data.notifications)) return;
+
+    for (const item of data.notifications) {
+      if (!seenNotificationIds.has(item.id)) {
+        if (firstFetchComplete) {
+          showToast(item.message, item.ticketId, item.commentId);
+        }
+        seenNotificationIds.add(item.id);
+      }
+    }
+    firstFetchComplete = true;
+  }
+
+  async function fetchNotifications() {
+    try {
+      const response = await fetch("/?ajax_notifications=1", { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      if (!response.ok) return;
+      const data = await response.json();
+      maybeToastNewNotifications(data);
+    } catch (error) {}
+  }
+
+  fetchNotifications();
+  setInterval(fetchNotifications, 5000);
+</script>
 </body>
 </html>

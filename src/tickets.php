@@ -349,16 +349,17 @@ function createAdminNotifications(string $author, string $title, int $ticketId):
     }
 }
 
-function createNotificationForUser(int $userId, string $message, ?int $ticketId = null): void
+function createNotificationForUser(int $userId, string $message, ?int $ticketId = null, ?int $commentId = null): void
 {
     $stmt = db()->prepare(
-        'INSERT INTO Notification (userId, ticketId, message, isRead, createdAt)
-         VALUES (:userId, :ticketId, :message, 0, CURRENT_TIMESTAMP)'
+        'INSERT INTO Notification (userId, ticketId, commentId, message, isRead, createdAt)
+         VALUES (:userId, :ticketId, :commentId, :message, 0, CURRENT_TIMESTAMP)'
     );
 
     $stmt->execute([
         'userId' => $userId,
         'ticketId' => $ticketId,
+        'commentId' => $commentId,
         'message' => $message,
     ]);
 }
@@ -370,11 +371,11 @@ function listUserNotifications(array $user, int $limit = 8): array
     }
 
     $stmt = db()->prepare(
-        'SELECT id, ticketId, message, isRead, createdAt
-         FROM Notification
-         WHERE userId = :userId
-         ORDER BY createdAt DESC
-         LIMIT :limit'
+'SELECT id, ticketId, commentId, message, isRead, createdAt
+          FROM Notification
+          WHERE userId = :userId
+          ORDER BY createdAt DESC
+          LIMIT :limit'
     );
     $stmt->bindValue(':userId', (int) $user['id'], PDO::PARAM_INT);
     $stmt->bindValue(':limit', max(1, $limit), PDO::PARAM_INT);
@@ -408,6 +409,8 @@ function addCommentToTicket(array $user, int $ticketId, string $content): void
         'content' => $cleanContent,
     ]);
 
+    $commentId = (int) db()->lastInsertId();
+
     addTicketActivity($ticketId, $user, 'COMMENT_ADDED', 'New comment added.');
 
     $ownerId = isset($ticket['userId']) ? (int) $ticket['userId'] : 0;
@@ -415,7 +418,20 @@ function addCommentToTicket(array $user, int $ticketId, string $content): void
         createNotificationForUser(
             $ownerId,
             sprintf('New comment on your issue "%s".', (string) $ticket['title']),
-            $ticketId
+            $ticketId,
+            $commentId
+        );
+    }
+
+    $adminStmt = db()->prepare('SELECT id FROM User WHERE role = :role AND id != :excludeId');
+    $adminStmt->execute(['role' => 'ADMIN', 'excludeId' => (int) $user['id']]);
+    $admins = $adminStmt->fetchAll();
+    foreach ($admins as $admin) {
+        createNotificationForUser(
+            (int) $admin['id'],
+            sprintf('New comment by %s on ticket #%d.', (string) $user['name'], $ticketId),
+            $ticketId,
+            $commentId
         );
     }
 }
