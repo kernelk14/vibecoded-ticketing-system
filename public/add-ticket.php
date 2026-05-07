@@ -32,6 +32,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$projects = listProjects();
+$branches = listBranches();
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -105,7 +108,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div>
             <label class="block text-sm">
               <span class="mb-1.5 block font-medium text-zinc-700">Project</span>
-              <input type="text" name="project" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. Billing API">
+              <select name="project" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                <option value="">Select Project</option>
+                <?php foreach ($projects as $proj): ?>
+                  <option value="<?= htmlspecialchars($proj['name'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($proj['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+              </select>
             </label>
           </div>
           <div>
@@ -170,7 +178,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div>
               <label class="block text-sm">
                 <span class="mb-1.5 block font-medium text-zinc-700">Git Branch</span>
-                <input type="text" name="branch" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring" placeholder="e.g. feature/payment-fix">
+                <select name="branch" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 outline-none ring-indigo-200 transition focus:border-indigo-300 focus:ring">
+                  <option value="">Select Branch</option>
+                  <?php foreach ($branches as $branch): ?>
+                    <option value="<?= htmlspecialchars($branch['branch'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($branch['branch'], ENT_QUOTES, 'UTF-8') ?></option>
+                  <?php endforeach; ?>
+                </select>
               </label>
             </div>
           </div>

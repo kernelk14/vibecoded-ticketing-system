@@ -141,6 +141,9 @@ try {
     ];
 
     $tickets = $user ? listTickets($user, $filters) : [];
+    usort($tickets, function($a, $b) {
+        return strtotime($b['updatedAt']) - strtotime($a['updatedAt']);
+    });
     if ($user !== null) {
         $adminNotifications = listUserNotifications($user);
         $unreadNotificationCount = unreadNotificationCount($user);
@@ -175,6 +178,19 @@ function priorityBadge(string $priority): string
     };
 }
 
+function getCommentAccentColor(int $index): array
+{
+    $colors = [
+        ['border' => '#6366f1', 'bg' => '#eef2ff', 'ring' => '#818cf8'],
+        ['border' => '#10b981', 'bg' => '#ecfdf5', 'ring' => '#34d399'],
+        ['border' => '#f59e0b', 'bg' => '#fffbeb', 'ring' => '#fbbf24'],
+        ['border' => '#f43f5e', 'bg' => '#fff1f2', 'ring' => '#fb7185'],
+        ['border' => '#8b5cf6', 'bg' => '#f5f3ff', 'ring' => '#a78bfa'],
+        ['border' => '#06b6d4', 'bg' => '#ecfeff', 'ring' => '#22d3ee'],
+    ];
+    return $colors[$index % 6];
+}
+
 $statusCounts = array_fill_keys(ALLOWED_STATUSES, 0);
 foreach ($tickets as $ticket) {
     $currentStatus = (string) ($ticket['status'] ?? '');
@@ -182,6 +198,28 @@ foreach ($tickets as $ticket) {
         $statusCounts[$currentStatus]++;
     }
 }
+
+$priorityCounts = [];
+foreach ($tickets as $ticket) {
+    $p = $ticket['priority'] ?? 'MEDIUM';
+    $priorityCounts[$p] = ($priorityCounts[$p] ?? 0) + 1;
+}
+
+$projectCounts = [];
+foreach ($tickets as $ticket) {
+    $p = $ticket['project'] ?? 'General';
+    $projectCounts[$p] = ($projectCounts[$p] ?? 0) + 1;
+}
+arsort($projectCounts);
+$topProjects = array_slice($projectCounts, 0, 5, true);
+
+$assigneeCounts = [];
+foreach ($tickets as $ticket) {
+    $a = $ticket['assigneeName'] ?? 'Unassigned';
+    $assigneeCounts[$a] = ($assigneeCounts[$a] ?? 0) + 1;
+}
+arsort($assigneeCounts);
+$topAssignees = array_slice($assigneeCounts, 0, 5, true);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -262,57 +300,39 @@ foreach ($tickets as $ticket) {
         <aside class="sticky top-20 h-fit w-60 flex-none rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           <p class="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Navigation</p>
           <nav class="mt-3 space-y-1">
-            <a href="/" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === null ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
+            <a href="/" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-indigo-50 text-indigo-700">
               <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
                 <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/></svg>
               </span>
               Dashboard
             </a>
-            <a href="/?status=OPEN" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === 'OPEN' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
-              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-blue-50 text-blue-700">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.5-5.5l-1.5 1.5M7 17l-1.5 1.5M17 17l1.5 1.5M7 7l-1.5-1.5"/></svg>
+            <a href="/tickets.php" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
+                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
               </span>
-              Open Tickets
+              All Tickets
             </a>
-            <a href="/?status=TRIAGED" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === 'TRIAGED' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
-              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-cyan-50 text-cyan-700">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-              </span>
-              Triaged
-            </a>
-            <a href="/?status=IN_PROGRESS" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
-              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-700">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
-              </span>
-              In Progress
-            </a>
-            <a href="/?status=IN_REVIEW" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === 'IN_REVIEW' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
-              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-violet-50 text-violet-700">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              </span>
-              In Review
-            </a>
-            <a href="/?status=TESTING" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === 'TESTING' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
-              <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-orange-50 text-orange-700">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2h8l1 6H7l1-6z"/><path d="M7 8h10v11H7z"/><path d="M10 13h4"/></svg>
-              </span>
-              Testing
-            </a>
-            <?php if (isAdmin($user)): ?>
-              <a href="/?status=DONE" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition <?= $selectedStatus === 'DONE' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700 hover:bg-zinc-100' ?>">
-                <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
-                  <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                </span>
-                Done
-              </a>
-            <?php endif; ?>
           </nav>
 
           <a href="/add-ticket.php" class="mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
             <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
               <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0l6-6-6-6"/></svg>
             </span>
-            Add Ticket
+Add Ticket
+          </a>
+          <?php if (isAdmin($user)): ?>
+          <a href="/projects.php" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-cyan-100 text-cyan-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M9 3v18"/></svg>
+            </span>
+            Projects
+          </a>
+          <?php endif; ?>
+          <a href="/assignments.php" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+            </span>
+            Assignments
           </a>
 
           <div class="mt-6 rounded-xl bg-zinc-50 p-3">
@@ -323,46 +343,6 @@ foreach ($tickets as $ticket) {
         </aside>
 
         <div class="flex-1 space-y-6">
-          <aside class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <section id="notifications-section" class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 class="text-lg font-semibold tracking-tight">Notifications</h2>
-                  <p class="text-sm text-zinc-500">
-                    <?= isAdmin($user) ? 'New issues created by users appear here.' : 'Updates from admin on your submitted issues appear here.' ?>
-                  </p>
-                </div>
-                <?php if ($unreadNotificationCount > 0): ?>
-                  <form method="post" id="mark-read-form">
-                    <input type="hidden" name="action" value="mark_notifications_read">
-                    <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-900">
-                      Mark all as read
-                    </button>
-                  </form>
-                <?php endif; ?>
-              </div>
-
-              <div id="admin-notification-list" class="mt-4 space-y-2">
-                <?php if ($adminNotifications === []): ?>
-                  <p class="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-500">No notifications yet.</p>
-                <?php endif; ?>
-
-                <?php foreach ($adminNotifications as $notification): ?>
-                  <article class="rounded-xl border px-4 py-3 <?= (int) $notification['isRead'] === 0 ? 'border-amber-200 bg-amber-50/70' : 'border-zinc-200 bg-zinc-50' ?>">
-                    <?php if (!empty($notification['ticketId'])): ?>
-                      <?php $commentHash = !empty($notification['commentId']) ? '#comment-' . (int) $notification['commentId'] : (str_contains((string) $notification['message'], 'comment') ? '#comments' : ''); ?>
-                      <a href="/issue.php?id=<?= (int) $notification['ticketId'] ?><?= $commentHash ?>" class="text-sm font-medium text-indigo-700 hover:underline">
-                        <?= htmlspecialchars((string) $notification['message'], ENT_QUOTES, 'UTF-8') ?>
-                      </a>
-                    <?php else: ?>
-                      <p class="text-sm font-medium text-zinc-800"><?= htmlspecialchars((string) $notification['message'], ENT_QUOTES, 'UTF-8') ?></p>
-                    <?php endif; ?>
-                    <p class="mt-1 text-xs text-zinc-500"><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $notification['createdAt'])), ENT_QUOTES, 'UTF-8') ?></p>
-                  </article>
-                <?php endforeach; ?>
-              </div>
-            </section>
-
           <header class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -382,6 +362,28 @@ foreach ($tickets as $ticket) {
                 </div>
               <?php endforeach; ?>
             </div>
+            <?php if (isAdmin($user)): ?>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Top Projects</p>
+                <?php foreach ($topProjects as $proj => $count): ?>
+                  <div class="flex justify-between text-xs py-1">
+                    <span class="text-zinc-700"><?= htmlspecialchars($proj) ?></span>
+                    <span class="font-medium"><?= $count ?></span>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+              <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Priority Breakdown</p>
+                <?php foreach (ALLOWED_PRIORITIES as $p): ?>
+                  <div class="flex justify-between text-xs py-1">
+                    <span class="text-zinc-700"><?= $p ?></span>
+                    <span class="font-medium"><?= $priorityCounts[$p] ?? 0 ?></span>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+            <?php endif; ?>
           </header>
 
           <?php if ($error !== null): ?>
@@ -391,14 +393,6 @@ foreach ($tickets as $ticket) {
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm xl:col-span-12">
               <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-lg font-semibold tracking-tight"><?= isAdmin($user) ? 'All Tickets' : 'My Tickets' ?></h2>
-                <div class="flex flex-wrap items-center gap-2">
-                  <a href="/" class="rounded-full px-3 py-1.5 text-sm font-medium transition <?= $selectedStatus === null ? 'bg-zinc-900 text-white shadow-sm' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' ?>">All</a>
-                  <?php foreach (ALLOWED_STATUSES as $status): ?>
-                    <a href="/?status=<?= urlencode($status) ?>" class="rounded-full px-3 py-1.5 text-sm font-medium transition <?= $selectedStatus === $status ? 'bg-zinc-900 text-white shadow-sm' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' ?>">
-                      <?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>
-                    </a>
-                  <?php endforeach; ?>
-                </div>
               </div>
               <form method="get" class="mb-5 grid gap-2 md:grid-cols-6">
                 <input type="text" name="q" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8') ?>" placeholder="Search text" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm md:col-span-2">
@@ -428,7 +422,9 @@ foreach ($tickets as $ticket) {
                   <article id="ticket-<?= (int) $ticket['id'] ?>" class="rounded-xl border border-zinc-200 bg-zinc-50/60 p-5 shadow-sm transition hover:border-zinc-300">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                       <div class="max-w-2xl">
-                        <h3 class="text-base font-semibold tracking-tight"><?= htmlspecialchars($ticket['title'], ENT_QUOTES, 'UTF-8') ?></h3>
+                        <h3 class="text-base font-semibold tracking-tight">
+                          <a href="/issue.php?id=<?= (int) $ticket['id'] ?>" class="text-indigo-600 hover:underline"><?= htmlspecialchars($ticket['title'], ENT_QUOTES, 'UTF-8') ?></a>
+                        </h3>
                         <p class="mt-1 text-xs font-medium uppercase tracking-wide text-zinc-500">
                           By <?= htmlspecialchars($ticket['author'], ENT_QUOTES, 'UTF-8') ?> |
                           Project: <?= htmlspecialchars((string) $ticket['project'], ENT_QUOTES, 'UTF-8') ?> |
@@ -460,81 +456,55 @@ foreach ($tickets as $ticket) {
                         <p><strong>Steps:</strong> <?= nl2br(htmlspecialchars((string) ($ticket['stepsToReproduce'] ?? '-'), ENT_QUOTES, 'UTF-8')) ?></p>
                         <p><strong>Error Log:</strong> <span class="font-mono"><?= nl2br(htmlspecialchars((string) ($ticket['errorLog'] ?? '-'), ENT_QUOTES, 'UTF-8')) ?></span></p>
                       </div>
-                    </details>
-
-                    <?php if (canManageTickets($user)): ?>
-                      <form method="post" class="mt-3 grid gap-2 rounded-lg border border-zinc-200 bg-white p-3 md:grid-cols-3">
-                        <input type="hidden" name="action" value="meta_update">
-                        <input type="hidden" name="id" value="<?= (int) $ticket['id'] ?>">
-                        <select name="assigneeUserId" class="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm">
-                          <option value="0">Unassigned</option>
-                          <?php foreach ($assignableUsers as $assignee): ?>
-                            <option value="<?= (int) $assignee['id'] ?>" <?= (int) $ticket['assigneeUserId'] === (int) $assignee['id'] ? 'selected' : '' ?>>
-                              <?= htmlspecialchars((string) $assignee['name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars((string) $assignee['role'], ENT_QUOTES, 'UTF-8') ?>)
-                            </option>
-                          <?php endforeach; ?>
-                        </select>
-                        <input type="datetime-local" name="dueAt" value="<?= !empty($ticket['dueAt']) ? htmlspecialchars(substr((string) $ticket['dueAt'], 0, 16), ENT_QUOTES, 'UTF-8') : '' ?>" class="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm">
-                        <button class="rounded-lg bg-zinc-700 px-3 py-1.5 text-sm font-medium text-white">Save Assignment</button>
-                      </form>
-                    <?php endif; ?>
-
-                    <?php if (canManageTickets($user)): ?>
-                      <div class="mt-4 flex flex-wrap gap-2 border-t border-zinc-200 pt-4">
-                        <?php if (isAdmin($user)): ?>
-                          <a href="/issue.php?id=<?= (int) $ticket['id'] ?>" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white">Open Admin Page</a>
-                        <?php endif; ?>
-                        <form method="post" class="flex items-center gap-2">
-                          <input type="hidden" name="action" value="status">
-                          <input type="hidden" name="id" value="<?= (int) $ticket['id'] ?>">
-                          <select name="status" class="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm">
-                            <?php foreach (ALLOWED_STATUSES as $status): ?>
-                              <option value="<?= $status ?>" <?= $ticket['status'] === $status ? 'selected' : '' ?>><?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?></option>
-                            <?php endforeach; ?>
-                          </select>
-                          <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white">Update</button>
-                        </form>
-                        <form method="post" onsubmit="return confirm('Delete this ticket?');">
-                          <input type="hidden" name="action" value="delete">
-                          <input type="hidden" name="id" value="<?= (int) $ticket['id'] ?>">
-                          <button class="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white">Delete</button>
-                        </form>
-                      </div>
-                    <?php endif; ?>
-
-                    <div class="mt-4 rounded-lg border border-zinc-200 bg-white p-3">
-                      <h4 class="text-sm font-semibold text-zinc-700">Comments</h4>
-                      <div class="mt-2 space-y-2">
-                        <?php foreach (listCommentsForTicket((int) $ticket['id']) as $comment): ?>
-                          <div class="rounded-md bg-zinc-50 p-2">
-                            <p class="text-xs font-semibold text-zinc-700"><?= htmlspecialchars((string) $comment['author'], ENT_QUOTES, 'UTF-8') ?></p>
-                            <p class="text-sm text-zinc-600"><?= nl2br(htmlspecialchars((string) $comment['content'], ENT_QUOTES, 'UTF-8')) ?></p>
-                          </div>
-                        <?php endforeach; ?>
-                      </div>
-                      <form method="post" class="mt-3 flex gap-2">
-                        <input type="hidden" name="action" value="add_comment">
-                        <input type="hidden" name="id" value="<?= (int) $ticket['id'] ?>">
-                        <input type="text" name="comment" required class="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm" placeholder="Add a comment...">
-                        <button class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white">Post</button>
-                      </form>
+</details>
+                    <?php $comments = listCommentsForTicket((int) $ticket['id']); $lastComment = end($comments); $commentIndex = 0; $colors = getCommentAccentColor($commentIndex); ?>
+                    <?php if ($lastComment): ?>
+                    <div class="mt-3 rounded-lg border-l-4 p-2 text-xs" id="comment-<?= (int) $lastComment['id'] ?>" style="display:inline-block;border-left-color:<?= $colors['border'] ?>;background-color:<?= $colors['bg'] ?>;outline:2px solid <?= $colors['ring'] ?>;outline-offset:-2px;max-width:fit-content;">
+                      <span class="font-semibold text-zinc-700 text-sm"><?= htmlspecialchars($lastComment['author'], ENT_QUOTES, 'UTF-8') ?></span>
+                      <span class="text-zinc-600 text-sm"><?= htmlspecialchars(mb_strimwidth($lastComment['content'], 0, 100, '...'), ENT_QUOTES, 'UTF-8') ?></span>
                     </div>
-
-                    <div class="mt-3 rounded-lg border border-zinc-200 bg-white p-3">
-                      <h4 class="text-sm font-semibold text-zinc-700">Recent Activity</h4>
-                      <div class="mt-2 space-y-1">
-                        <?php foreach (listActivitiesForTicket((int) $ticket['id']) as $activity): ?>
-                          <p class="text-xs text-zinc-600">
-                            <span class="font-semibold"><?= htmlspecialchars((string) $activity['actorName'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <?= htmlspecialchars((string) $activity['message'], ENT_QUOTES, 'UTF-8') ?>
-                            <span class="text-zinc-400">(<?= htmlspecialchars(date('M j g:i A', strtotime((string) $activity['createdAt'])), ENT_QUOTES, 'UTF-8') ?>)</span>
-                          </p>
-                        <?php endforeach; ?>
-                      </div>
-                    </div>
+                    <?php endif; ?>
                   </article>
                 <?php endforeach; ?>
               </div>
+            </div>
+
+          <section id="notifications-section" class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 class="text-lg font-semibold tracking-tight">Notifications</h2>
+                <p class="text-sm text-zinc-500">
+                  <?= isAdmin($user) ? 'New issues created by users appear here.' : 'Updates from admin on your submitted issues appear here.' ?>
+                </p>
+              </div>
+              <?php if ($unreadNotificationCount > 0): ?>
+                <form method="post" id="mark-read-form">
+                  <input type="hidden" name="action" value="mark_notifications_read">
+                  <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-900">
+                    Mark all as read
+                  </button>
+                </form>
+              <?php endif; ?>
+            </div>
+
+            <div id="admin-notification-list" class="mt-4 space-y-2">
+              <?php if ($adminNotifications === []): ?>
+                <p class="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-500">No notifications yet.</p>
+              <?php endif; ?>
+
+              <?php foreach ($adminNotifications as $notification): ?>
+                <article class="rounded-xl border px-4 py-3 <?= (int) $notification['isRead'] === 0 ? 'border-amber-200 bg-amber-50/70' : 'border-zinc-200 bg-zinc-50' ?>">
+                  <?php if (!empty($notification['ticketId'])): ?>
+                    <?php $commentHash = !empty($notification['commentId']) ? '#comment-' . (int) $notification['commentId'] : (str_contains((string) $notification['message'], 'comment') ? '#comments' : ''); ?>
+                    <a href="/issue.php?id=<?= (int) $notification['ticketId'] ?><?= $commentHash ?>" class="text-sm font-medium text-indigo-700 hover:underline">
+                      <?= htmlspecialchars((string) $notification['message'], ENT_QUOTES, 'UTF-8') ?>
+                    </a>
+                  <?php else: ?>
+                    <p class="text-sm font-medium text-zinc-800"><?= htmlspecialchars((string) $notification['message'], ENT_QUOTES, 'UTF-8') ?></p>
+                  <?php endif; ?>
+                  <p class="mt-1 text-xs text-zinc-500"><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $notification['createdAt'])), ENT_QUOTES, 'UTF-8') ?></p>
+                </article>
+              <?php endforeach; ?>
             </div>
           </section>
         </div>

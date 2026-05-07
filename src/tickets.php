@@ -20,8 +20,114 @@ function canManageTickets(array $user): bool
 function listAssignableUsers(): array
 {
     return db()->query(
-        "SELECT id, name, role FROM User WHERE role IN ('ADMIN', 'DEVELOPER', 'QA') ORDER BY name ASC"
+        "SELECT id, name, role FROM User ORDER BY name ASC"
     )->fetchAll();
+}
+
+function listProjects(): array
+{
+    return db()->query("SELECT name FROM Project ORDER BY name ASC")->fetchAll();
+}
+
+function listAttachmentsForTicket(int $ticketId): array
+{
+    $stmt = db()->prepare(
+        'SELECT id, ticketId, userId, filename, originalName, mimeType, fileSize, createdAt
+         FROM Attachment WHERE ticketId = :ticketId ORDER BY createdAt DESC'
+    );
+    $stmt->execute(['ticketId' => $ticketId]);
+    return $stmt->fetchAll();
+}
+
+function getAttachment(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM Attachment WHERE id = :id');
+    $stmt->execute(['id' => $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function saveAttachment(array $user, int $ticketId, string $filename, string $originalName, ?string $mimeType = null, ?int $fileSize = null): void
+{
+    $stmt = db()->prepare(
+        'INSERT INTO Attachment (ticketId, userId, filename, originalName, mimeType, fileSize, createdAt)
+         VALUES (:ticketId, :userId, :filename, :originalName, :mimeType, :fileSize, CURRENT_TIMESTAMP)'
+    );
+    $stmt->execute([
+        'ticketId' => $ticketId,
+        'userId' => (int) $user['id'],
+        'filename' => $filename,
+        'originalName' => $originalName,
+        'mimeType' => $mimeType,
+        'fileSize' => $fileSize,
+    ]);
+}
+
+function deleteAttachment(int $id): void
+{
+    $attachment = getAttachment($id);
+    if ($attachment) {
+        $filepath = __DIR__ . '/../public/uploads/' . $attachment['filename'];
+        if (file_exists($filepath)) {
+            unlink($filepath);
+        }
+        $stmt = db()->prepare('DELETE FROM Attachment WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+    }
+}
+
+function listAssignmentsForUser(int $userId): array
+{
+    $stmt = db()->prepare(
+        'SELECT a.id, a.ticketId, a.assigneeUserId, a.assignedByUserId, a.createdAt,
+                t.title, t.status, t.priority,
+                assig.name as assigneeName, ab.name as assignedByName
+         FROM Assignment a
+         JOIN Ticket t ON t.id = a.ticketId
+         JOIN User assig ON assig.id = a.assigneeUserId
+         JOIN User ab ON ab.id = a.assignedByUserId
+         WHERE a.assigneeUserId = :userId
+         ORDER BY a.createdAt DESC'
+    );
+    $stmt->execute(['userId' => $userId]);
+    return $stmt->fetchAll();
+}
+
+function listBranches(): array
+{
+    $rows = db()->query("SELECT branch FROM Project WHERE branch IS NOT NULL AND branch != '' ORDER BY branch ASC")->fetchAll();
+    if (empty($rows)) {
+        $rows = db()->query("SELECT DISTINCT branch FROM Ticket WHERE branch IS NOT NULL AND branch != '' ORDER BY branch ASC")->fetchAll();
+    }
+    return $rows;
+}
+
+function createProject(string $name, string $repoUrl = '', string $branch = ''): void
+{
+    $name = trim($name);
+    if ($name === '') {
+        return;
+    }
+    
+    $stmt = db()->prepare("SELECT id FROM Project WHERE name = :name LIMIT 1");
+    $stmt->execute(['name' => $name]);
+    if ($stmt->fetch()) {
+        return;
+    }
+    
+    db()->prepare(
+        "INSERT INTO Project (name, repoUrl, branch) VALUES (:name, :repoUrl, :branch)"
+    )->execute(['name' => $name, 'repoUrl' => $repoUrl ?: null, 'branch' => $branch ?: null]);
+}
+
+function deleteProject(string $name): void
+{
+    $stmt = db()->prepare("DELETE FROM Project WHERE name = :name");
+    $stmt->execute(['name' => $name]);
+}
+
+function listAllProjects(): array
+{
+    return db()->query("SELECT * FROM Project ORDER BY name ASC")->fetchAll();
 }
 
 function getTicketById(int $ticketId): ?array
@@ -50,8 +156,9 @@ function listTickets(array $user, array $filters = []): array
     $params = [];
 
     if (!canManageTickets($user)) {
-        $where[] = 'userId = :userId';
+        $where[] = '(userId = :userId OR assigneeUserId = :assigneeUserId)';
         $params['userId'] = (int) $user['id'];
+        $params['assigneeUserId'] = (int) $user['id'];
     }
 
     $status = $filters['status'] ?? null;
@@ -204,6 +311,35 @@ function updateTicketStatusForUser(array $user, int $id, string $status): void
     }
 }
 
+function requestTicketReview(array $user, int $ticketId): void
+{
+    $ticketStmt = db()->prepare('SELECT id, assigneeUserId, title, status FROM Ticket WHERE id = :id LIMIT 1');
+    $ticketStmt->execute(['id' => $ticketId]);
+    $ticket = $ticketStmt->fetch();
+    if (!$ticket) {
+        return;
+    }
+
+    $assigneeId = isset($ticket['assigneeUserId']) ? (int) $ticket['assigneeUserId'] : 0;
+    if ($assigneeId !== (int) $user['id']) {
+        return;
+    }
+
+    updateTicketStatus($ticketId, 'IN_REVIEW');
+    addTicketActivity($ticketId, $user, 'STATUS_UPDATED', 'Status changed to IN_REVIEW.');
+
+    $adminStmt = db()->prepare('SELECT id FROM User WHERE role = :role');
+    $adminStmt->execute(['role' => 'ADMIN']);
+    $admins = $adminStmt->fetchAll();
+    foreach ($admins as $admin) {
+        createNotificationForUser(
+            (int) $admin['id'],
+            sprintf('%s requested review for ticket #%d.', (string) $user['name'], $ticketId),
+            $ticketId
+        );
+    }
+}
+
 function updateTicketMetaForUser(array $user, int $ticketId, array $input): void
 {
     if (!canManageTickets($user)) {
@@ -247,7 +383,12 @@ function updateTicketDetailsForAdmin(array $user, int $ticketId, array $input): 
     $dueAt = trim((string) ($input['dueAt'] ?? ''));
     $dueAtValue = $dueAt !== '' ? $dueAt . ':00' : null;
     $reproducible = isset($input['reproducible']) && $input['reproducible'] === '1' ? 1 : 0;
-
+    
+    $currentStmt = db()->prepare('SELECT assigneeUserId, userId FROM Ticket WHERE id = :id');
+    $currentStmt->execute(['id' => $ticketId]);
+    $currentTicket = $currentStmt->fetch();
+    $oldAssignee = (int) ($currentTicket['assigneeUserId'] ?? 0);
+    
     $stmt = db()->prepare(
         'UPDATE Ticket SET
             title = :title,
@@ -293,6 +434,31 @@ function updateTicketDetailsForAdmin(array $user, int $ticketId, array $input): 
     ]);
 
     addTicketActivity($ticketId, $user, 'DETAILS_UPDATED', 'Admin updated ticket details.');
+    
+    if ($assigneeUserId > 0 && $assigneeUserId !== $oldAssignee) {
+        $userStmt = db()->prepare('SELECT name, email FROM User WHERE id = :id');
+        $userStmt->execute(['id' => $assigneeUserId]);
+        $assignedUser = $userStmt->fetch();
+        if ($assignedUser) {
+            $assignMsg = 'You have been assigned to issue #' . $ticketId;
+            createNotificationForUser($assigneeUserId, $assignMsg, $ticketId);
+            addTicketActivity($ticketId, $user, 'ASSIGNED', 'Assigned to ' . $assignedUser['name']);
+            
+            $assignStmt = db()->prepare('INSERT INTO TicketComment (ticketId, userId, author, content, createdAt) VALUES (:ticketId, NULL, :author, :content, CURRENT_TIMESTAMP)');
+            $assignStmt->execute([
+                'ticketId' => $ticketId,
+                'author' => 'System',
+                'content' => 'Assigned to ' . $assignedUser['name'] . ' by ' . ($user['name'] ?? 'Admin'),
+            ]);
+            
+            $assignRecordStmt = db()->prepare('INSERT INTO Assignment (ticketId, assigneeUserId, assignedByUserId) VALUES (:ticketId, :assigneeUserId, :assignedByUserId)');
+            $assignRecordStmt->execute([
+                'ticketId' => $ticketId,
+                'assigneeUserId' => $assigneeUserId,
+                'assignedByUserId' => (int) $user['id'],
+            ]);
+        }
+    }
 }
 
 function deleteTicket(int $id): void
@@ -418,6 +584,19 @@ function addCommentToTicket(array $user, int $ticketId, string $content): void
         createNotificationForUser(
             $ownerId,
             sprintf('New comment on your issue "%s".', (string) $ticket['title']),
+            $ticketId,
+            $commentId
+        );
+    }
+
+    $assigneeStmt = db()->prepare('SELECT assigneeUserId FROM Ticket WHERE id = :id');
+    $assigneeStmt->execute(['id' => $ticketId]);
+    $ticketWithAssignee = $assigneeStmt->fetch();
+    $assigneeId = isset($ticketWithAssignee['assigneeUserId']) ? (int) $ticketWithAssignee['assigneeUserId'] : 0;
+    if ($assigneeId > 0 && $assigneeId !== (int) $user['id']) {
+        createNotificationForUser(
+            $assigneeId,
+            sprintf('New comment by %s on ticket #%d.', (string) $user['name'], $ticketId),
             $ticketId,
             $commentId
         );
