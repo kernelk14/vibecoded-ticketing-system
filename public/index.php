@@ -64,6 +64,29 @@ try {
             exit;
         }
 
+        if ($user !== null && $action === 'bulk_update' && isAdmin($user)) {
+            $ticketIds = $_POST['ticket_ids'] ?? [];
+            $bulkStatus = trim((string) ($_POST['bulk_status'] ?? ''));
+            foreach ($ticketIds as $tid) {
+                $tid = (int) $tid;
+                if ($tid > 0) {
+                    if (!empty($bulkStatus) && in_array($bulkStatus, ALLOWED_STATUSES, true)) {
+                        updateTicketStatus($tid, $bulkStatus);
+                    }
+                }
+            }
+        }
+
+        if ($user !== null && $action === 'bulk_delete' && isAdmin($user)) {
+            $ticketIds = $_POST['ticket_ids'] ?? [];
+            foreach ($ticketIds as $tid) {
+                $tid = (int) $tid;
+                if ($tid > 0) {
+                    deleteTicket($tid);
+                }
+            }
+        }
+
         if ($user !== null && $action === 'create') {
             $title = trim((string) ($_POST['title'] ?? ''));
             $description = trim((string) ($_POST['description'] ?? ''));
@@ -390,9 +413,23 @@ Add Ticket
             <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
           <?php endif; ?>
 
+          <form method="post" id="bulk-form">
+            <input type="hidden" name="action" value="bulk_update">
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm xl:col-span-12">
               <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-lg font-semibold tracking-tight"><?= isAdmin($user) ? 'All Tickets' : 'My Tickets' ?></h2>
+                <?php if (isAdmin($user)): ?>
+                <div class="flex gap-2">
+                  <a href="/export.php" target="_blank" class="rounded-lg bg-emerald-100 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-200">Export CSV</a>
+                  <button type="submit" name="action" value="bulk_delete" class="rounded-lg bg-indigo-100 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-200">Bulk Delete</button>
+                  <select name="bulk_status" class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm">
+                    <option value="">Change status...</option>
+                    <?php foreach (ALLOWED_STATUSES as $s): ?>
+                    <option value="<?= $s ?>"><?= $s ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <?php endif; ?>
               </div>
               <form method="get" class="mb-5 grid gap-2 md:grid-cols-6">
                 <input type="text" name="q" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8') ?>" placeholder="Search text" class="rounded-lg border border-zinc-300 px-3 py-2 text-sm md:col-span-2">
@@ -421,6 +458,9 @@ Add Ticket
                 <?php foreach ($tickets as $ticket): ?>
                   <article id="ticket-<?= (int) $ticket['id'] ?>" class="rounded-xl border border-zinc-200 bg-zinc-50/60 p-5 shadow-sm transition hover:border-zinc-300">
                     <div class="flex flex-wrap items-start justify-between gap-3">
+                      <?php if (isAdmin($user)): ?>
+                      <input type="checkbox" name="ticket_ids[]" value="<?= (int) $ticket['id'] ?>" class="mt-1.5 h-4 w-4">
+                      <?php endif; ?>
                       <div class="max-w-2xl">
                         <h3 class="text-base font-semibold tracking-tight">
                           <a href="/issue.php?id=<?= (int) $ticket['id'] ?>" class="text-indigo-600 hover:underline"><?= htmlspecialchars($ticket['title'], ENT_QUOTES, 'UTF-8') ?></a>

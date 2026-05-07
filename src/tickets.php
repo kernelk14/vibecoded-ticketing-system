@@ -75,6 +75,65 @@ function deleteAttachment(int $id): void
     }
 }
 
+function listWatchersForTicket(int $ticketId): array
+{
+    $stmt = db()->prepare(
+        'SELECT w.id, w.userId, u.name, u.email
+         FROM Watcher w
+         JOIN User u ON u.id = w.userId
+         WHERE w.ticketId = :ticketId'
+    );
+    $stmt->execute(['ticketId' => $ticketId]);
+    return $stmt->fetchAll();
+}
+
+function addWatcher(int $ticketId, int $userId): void
+{
+    $stmt = db()->prepare(
+        'INSERT OR IGNORE INTO Watcher (ticketId, userId, createdAt) VALUES (:ticketId, :userId, CURRENT_TIMESTAMP)'
+    );
+    $stmt->execute(['ticketId' => $ticketId, 'userId' => $userId]);
+}
+
+function removeWatcher(int $ticketId, int $userId): void
+{
+    $stmt = db()->prepare('DELETE FROM Watcher WHERE ticketId = :ticketId AND userId = :userId');
+    $stmt->execute(['ticketId' => $ticketId, 'userId' => $userId]);
+}
+
+function listTags(): array
+{
+    return db()->query("SELECT * FROM Tag ORDER BY name ASC")->fetchAll();
+}
+
+function createTag(string $name, string $color = '#6366f1'): void
+{
+    $stmt = db()->prepare('INSERT OR IGNORE INTO Tag (name, color) VALUES (:name, :color)');
+    $stmt->execute(['name' => trim($name), 'color' => $color]);
+}
+
+function listTagsForTicket(int $ticketId): array
+{
+    $stmt = db()->prepare(
+        'SELECT t.id, t.name, t.color FROM Tag t
+         JOIN TicketTag tt ON tt.tagId = t.id WHERE tt.ticketId = :ticketId'
+    );
+    $stmt->execute(['ticketId' => $ticketId]);
+    return $stmt->fetchAll();
+}
+
+function addTagToTicket(int $ticketId, int $tagId): void
+{
+    $stmt = db()->prepare('INSERT OR IGNORE INTO TicketTag VALUES (:ticketId, :tagId)');
+    $stmt->execute(['ticketId' => $ticketId, 'tagId' => $tagId]);
+}
+
+function removeTagFromTicket(int $ticketId, int $tagId): void
+{
+    $stmt = db()->prepare('DELETE FROM TicketTag WHERE ticketId = :ticketId AND tagId = :tagId');
+    $stmt->execute(['ticketId' => $ticketId, 'tagId' => $tagId]);
+}
+
 function listAssignmentsForUser(int $userId): array
 {
     $stmt = db()->prepare(
@@ -550,7 +609,7 @@ function listUserNotifications(array $user, int $limit = 8): array
     return $stmt->fetchAll();
 }
 
-function addCommentToTicket(array $user, int $ticketId, string $content): void
+function addCommentToTicket(array $user, int $ticketId, string $content, bool $isInternal = false): void
 {
     $cleanContent = trim($content);
     if ($cleanContent === '') {
@@ -565,14 +624,15 @@ function addCommentToTicket(array $user, int $ticketId, string $content): void
     }
 
     $stmt = db()->prepare(
-        'INSERT INTO TicketComment (ticketId, userId, author, content, createdAt)
-         VALUES (:ticketId, :userId, :author, :content, CURRENT_TIMESTAMP)'
+        'INSERT INTO TicketComment (ticketId, userId, author, content, isInternal, createdAt)
+         VALUES (:ticketId, :userId, :author, :content, :isInternal, CURRENT_TIMESTAMP)'
     );
     $stmt->execute([
         'ticketId' => $ticketId,
         'userId' => (int) $user['id'],
         'author' => (string) $user['name'],
         'content' => $cleanContent,
+        'isInternal' => $isInternal ? 1 : 0,
     ]);
 
     $commentId = (int) db()->lastInsertId();
@@ -615,15 +675,16 @@ function addCommentToTicket(array $user, int $ticketId, string $content): void
     }
 }
 
-function listCommentsForTicket(int $ticketId): array
+function listCommentsForTicket(int $ticketId, ?array $user = null): array
 {
+    $isAdmin = $user !== null && isAdmin($user);
     $stmt = db()->prepare(
-        'SELECT id, author, content, createdAt
+        'SELECT id, author, content, isInternal, createdAt
          FROM TicketComment
-         WHERE ticketId = :ticketId
+         WHERE ticketId = :ticketId AND (isInternal = 0 OR :isAdmin = 1)
          ORDER BY createdAt ASC'
     );
-    $stmt->execute(['ticketId' => $ticketId]);
+    $stmt->execute(['ticketId' => $ticketId, 'isAdmin' => $isAdmin ? 1 : 0]);
     return $stmt->fetchAll();
 }
 
@@ -659,6 +720,17 @@ function nullableText(mixed $value): ?string
 {
     $text = trim((string) ($value ?? ''));
     return $text === '' ? null : $text;
+}
+
+function formatBytes(int $bytes): string
+{
+    $units = ['B', 'KB', 'MB', 'GB'];
+    $i = 0;
+    while ($bytes >= 1024 && $i < count($units) - 1) {
+        $bytes /= 1024;
+        $i++;
+    }
+    return round($bytes, 1) . ' ' . $units[$i];
 }
 
 function unreadNotificationCount(array $user): int

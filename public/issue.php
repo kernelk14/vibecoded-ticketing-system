@@ -50,7 +50,8 @@ try {
             updateTicketDetailsForAdmin($user, $ticketId, $_POST);
         }
         if ($action === 'add_comment') {
-            addCommentToTicket($user, $ticketId, (string) ($_POST['comment'] ?? ''));
+            $isInternal = isAdmin($user) && !empty($_POST['is_internal']);
+            addCommentToTicket($user, $ticketId, (string) ($_POST['comment'] ?? ''), $isInternal);
             header('Location: /issue.php?id=' . $ticketId . '&show_comments=1');
             exit;
         }
@@ -87,6 +88,22 @@ try {
             header('Location: /issue.php?id=' . $ticketId);
             exit;
         }
+        if ($action === 'add_watcher') {
+            $watcherId = (int) ($_POST['watcher_id'] ?? 0);
+            if ($watcherId > 0) {
+                addWatcher($ticketId, $watcherId);
+            }
+            header('Location: /issue.php?id=' . $ticketId);
+            exit;
+        }
+        if ($action === 'remove_watcher') {
+            $watcherId = (int) ($_POST['watcher_id'] ?? 0);
+            if ($watcherId > 0) {
+                removeWatcher($ticketId, $watcherId);
+            }
+            header('Location: /issue.php?id=' . $ticketId);
+            exit;
+        }
         header('Location: /issue.php?id=' . $ticketId);
         exit;
     }
@@ -99,8 +116,10 @@ try {
     $assignableUsers = listAssignableUsers();
     $projects = listProjects();
     $branches = listBranches();
-    $comments = listCommentsForTicket($ticketId);
+    $comments = listCommentsForTicket($ticketId, $user);
     $activities = listActivitiesForTicket($ticketId);
+    $attachments = listAttachmentsForTicket($ticketId);
+    $watchers = listWatchersForTicket($ticketId);
     $comments = array_reverse($comments);
     $totalComments = count($comments);
 
@@ -544,8 +563,82 @@ function getCommentAccentColor(int $index): array
                 <form method="post" class="mt-3 space-y-2">
                   <input type="hidden" name="action" value="add_comment">
                   <textarea name="comment" required rows="3" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm" placeholder="Add comment..."></textarea>
-                  <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white">Post</button>
+                  <div class="flex items-center gap-4">
+                    <?php if (isAdmin($user)): ?>
+                    <label class="flex items-center gap-2 text-sm text-zinc-700">
+                      <input type="checkbox" name="is_internal" value="1"> Internal (admin only)
+                    </label>
+                    <?php endif; ?>
+                    <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white">Post</button>
+                  </div>
                 </form>
+              </section>
+
+              <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <h2 class="text-sm font-semibold text-zinc-700">Attachments</h2>
+                <div class="mt-3 space-y-2">
+                  <?php if (empty($attachments)): ?>
+                    <p class="text-sm text-zinc-500">No attachments yet.</p>
+                  <?php else: ?>
+                    <?php foreach ($attachments as $attach): ?>
+                      <div class="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 p-2">
+                        <a href="/uploads/<?= htmlspecialchars($attach['filename'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" class="text-sm text-indigo-600 hover:underline"><?= htmlspecialchars($attach['originalName'], ENT_QUOTES, 'UTF-8') ?></a>
+                        <span class="text-xs text-zinc-500"><?= htmlspecialchars(formatBytes($attach['fileSize']), ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php if (isAdmin($user)): ?>
+                        <form method="post">
+                          <input type="hidden" name="action" value="delete_attachment">
+                          <input type="hidden" name="attachment_id" value="<?= (int) $attach['id'] ?>">
+                          <button class="text-xs text-red-600 hover:underline">Delete</button>
+                        </form>
+                        <?php endif; ?>
+                      </div>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                  <?php if (isAdmin($user)): ?>
+                  <form method="post" enctype="multipart/form-data" class="mt-2">
+                    <input type="hidden" name="action" value="upload_attachment">
+                    <input type="file" name="attachment" class="text-sm">
+                    <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white ml-2">Upload</button>
+                  </form>
+                  <?php endif; ?>
+                </div>
+              </section>
+
+              <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <h2 class="text-sm font-semibold text-zinc-700">Watchers</h2>
+                <div class="mt-3 space-y-2">
+                  <?php if (empty($watchers)): ?>
+                    <p class="text-sm text-zinc-500">No watchers yet.</p>
+                  <?php else: ?>
+                    <?php foreach ($watchers as $w): ?>
+                      <div class="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 p-2">
+                        <span class="text-sm"><?= htmlspecialchars($w['name'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php if (isAdmin($user)): ?>
+                        <form method="post">
+                          <input type="hidden" name="action" value="remove_watcher">
+                          <input type="hidden" name="watcher_id" value="<?= (int) $w['userId'] ?>">
+                          <button class="text-xs text-red-600 hover:underline">Remove</button>
+                        </form>
+                        <?php endif; ?>
+                      </div>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                  <?php if (isAdmin($user)): ?>
+                  <form method="post" class="mt-2 flex gap-2">
+                    <input type="hidden" name="action" value="add_watcher">
+                    <select name="watcher_id" class="text-sm rounded-lg border border-zinc-300">
+                      <option value="">Add watcher...</option>
+                      <?php foreach ($assignableUsers as $u): ?>
+                        <?php $isWatcher = in_array($u['id'], array_column($watchers, 'userId')); ?>
+                        <?php if (!$isWatcher && (int) $u['id'] !== (int) ($ticket['assigneeUserId'] ?? 0)): ?>
+                        <option value="<?= (int) $u['id'] ?>"><?= htmlspecialchars($u['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                        <?php endif; ?>
+                      <?php endforeach; ?>
+                    </select>
+                    <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white">Add</button>
+                  </form>
+                  <?php endif; ?>
+                </div>
               </section>
 
               <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
